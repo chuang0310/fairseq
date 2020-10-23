@@ -28,6 +28,8 @@ from fairseq.data import iterators
 from fairseq.logging import meters, metrics, progress_bar
 from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
+# for access simplification
+from easse.report import get_all_scores
 
 
 logging.basicConfig(
@@ -165,6 +167,7 @@ def should_stop_early(args, valid_loss):
             )
             return True
         else:
+            logger.info('early stop since valid performance hasn\'t improved for {} runs'.format(should_stop_early.num_runs))
             return False
 
 
@@ -262,12 +265,21 @@ def validate_and_save(args, trainer, task, epoch_itr, valid_subsets, end_of_epoc
 
     # Validate
     valid_losses = [None]
+    sari = None
     if do_validate:
         valid_losses = validate(args, trainer, task, epoch_itr, valid_subsets)
+        if trainer.task.args.valid_hyps:
+            trainer.task.args.valid_hyps.sort(key=lambda x: x[0])
+            hyps = [tmp[-1] for tmp in trainer.task.args.valid_hyps]
+            scores = get_all_scores(trainer.task.args.valid_raws, hyps, trainer.task.args.valid_refs)
+            # print(f'num_updates={trainer.get_num_updates()}')
+            print(f'ts_scores={scores}')
+            sari = scores['SARI']
+            valid_losses[0] = -sari
 
     # Stopping conditions
     should_stop = (
-        should_stop_early(args, valid_losses[0])
+        should_stop_early(args, valid_losses[0] if sari is None else sari)
         or num_updates >= max_update
         or (
             args.stop_time_hours > 0
@@ -278,7 +290,7 @@ def validate_and_save(args, trainer, task, epoch_itr, valid_subsets, end_of_epoc
     # Save checkpoint
     if do_save or should_stop:
         logger.info("begin save checkpoint")
-        checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
+        checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0] if sari is None else sari)
 
     return valid_losses, should_stop
 
@@ -297,6 +309,7 @@ def validate(args, trainer, task, epoch_itr, subsets):
 
     trainer.begin_valid_epoch(epoch_itr.epoch)
     valid_losses = []
+    trainer.task.args.valid_hyps = []
     for subset in subsets:
         logger.info('begin validation on "{}" subset'.format(subset))
 
