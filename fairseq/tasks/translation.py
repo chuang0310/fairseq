@@ -430,7 +430,8 @@ class TranslationTask(LegacyFairseqTask):
             return s
 
         gen_out = self.inference_step(generator, [model], sample, prefix_tokens=None)
-        hyps, refs = [], []
+        hyps, refs, valid_hyps = [], [], []
+        sample_ids = sample['id'].tolist()
         for i in range(len(gen_out)):
             hyps.append(decode(gen_out[i][0]["tokens"]))
             refs.append(
@@ -439,6 +440,10 @@ class TranslationTask(LegacyFairseqTask):
                     escape_unk=True,  # don't count <unk> as matches to the hypo
                 )
             )
+            sample_id = sample_ids[i]
+            ref = self.args.composed_preprocessor.decode_sentence(decode(gen_out[i][0]["tokens"]), None)
+            valid_hyps.append([sample_id, ref])
+        self.args.valid_hyps += valid_hyps
         if self.args.eval_bleu_print_samples:
             logger.info("example hypothesis: " + hyps[0])
             logger.info("example reference: " + refs[0])
