@@ -127,6 +127,17 @@ def main(args):
         valid_losses, should_stop = train(args, trainer, task, epoch_itr)
         if should_stop:
             break
+        
+        if epoch_itr.epoch % cfg.dataset.validate_interval == 0:
+            valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
+            if trainer.task.args.valid_hyps:
+                trainer.task.args.valid_hyps.sort(key=lambda x: x[0])
+                hyps = [tmp[-1] for tmp in trainer.task.args.valid_hyps]
+                scores = get_all_scores(trainer.task.args.valid_raws, hyps, trainer.task.args.valid_refs)
+                # print(f'num_updates={trainer.get_num_updates()}')
+                # print(f'ts_scores={scores}')
+                sari = scores['SARI']
+                valid_losses[0] = -sari
 
         # only use first validation loss to update the learning rate
         lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
@@ -275,7 +286,6 @@ def validate_and_save(args, trainer, task, epoch_itr, valid_subsets, end_of_epoc
             # print(f'num_updates={trainer.get_num_updates()}')
             print(f'ts_scores={scores}')
             sari = scores['SARI']
-            valid_losses[0] = -sari
 
     # Stopping conditions
     should_stop = (
